@@ -1,0 +1,22 @@
+We tested the following CommonRoad scenarios:
+USA_US101-2_5_T-1
+USA_US101-3_5_T-1
+USA_US101-7_4_T-1
+USA_US101-8_5_T-1
+USA_US101-9_4_T-1
+USA_US101-10_4_T-1
+USA_US101-11_4_T-1
+USA_US101-12_4_T-1
+USA_US101-13_5_T-1
+USA_US101-14_6_T-1
+USA_US101-15_3_T-1
+USA_US101-22_4_T-1
+USA_US101-27_4_T-1
+USA_US101-28_3_T-1
+ZAM_ACC-1_1_T-1
+ZAM_ACC-1_2_T-1
+ZAM_ACC-1_3_T-1
+ZAM_CC-1_1_T-1
+
+You can download the scenarios with the scenario selector on our homepage (https://commonroad.in.tum.de/scenarios).
+You can also get them from our scenario repository (https://gitlab.lrz.de/tum-cps/commonroad-scenarios).

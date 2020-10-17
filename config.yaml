@@ -1,0 +1,249 @@
+
+# simulation parameters
+###
+# .. code-block:: yaml
+#
+#    - dt: time step size
+#    - commonroad_benchmark_id: CommonRoad solution file name
+#    - commonroad_scenario_folder: folder in which CommonRoad scenarios are located (relative to path of this file)
+#    - verbose_mode: activate/deactivate status output of algorithms and simulation
+#    - time_measuring: activate/deactivate computation time measuring
+#    - commonroad_video_creation: activate/deactivate video creation of CommonRoad scenario
+#    - profile_video_creation: activate/deactivate video creation of profiles
+#    - plotting_profiles: activate/deactivate plotting of state profiles
+#    - other_vehicle_plots: list with CommonRoad obstacle IDs which should be considered for plotting of profiles
+#    - store_profiles: activate/deactivate storage of profiles
+#    - video_output_folder: folder in which the created videos are stored (relative to path of this file)
+#    - figure_output_folder: folder in which the created figures are stored (relative to path of this file)
+simulation_param:
+    dt: 0.1
+    commonroad_benchmark_id: USA_US101-13_5_T-1
+    commonroad_scenario_folder: scenarios
+    verbose_mode: false
+    time_measuring: false
+    commonroad_video_creation: false
+    profile_video_creation: false
+    video_output_folder: videos
+    plotting_profiles: false
+    other_vehicle_plots: [140]
+    store_profiles: true
+    figure_output_folder: figures
+
+# road network and curvilinear coordinate system parameters
+###
+# .. code-block:: yaml
+#
+#    - num_chankins_corner_cutting: number of how often chankins algorithm should be applied
+#    - polyline_resampling_step: step size for polyline resampling
+#    - merging_length: maximum accumulated length of lanalets belonging to a lane
+road_network_param:
+  num_chankins_corner_cutting: 10
+  polyline_resampling_step: 0.5
+  merging_length: 1000
+
+# Ego vehicle parameters
+###
+# .. code-block:: yaml
+#
+#    - vehicle_type: CommonRoad vehicle number; possible options are 1, 2 or 3 (see CommonRoad vehicle models)
+#    - a_max: maximum acceleration of ACC vehicle
+#    - a_min: minimum acceleration of ACC vehicle
+#    - j_max: maximum jerk of ACC vehicle
+#    - j_min: minimum jerk of ACC vehicle
+#    - v_des: desired velocity of ACC vehicle
+#    - t_react: reaction time of ACC vehicle
+#    - dynamics_param: physical parameters of ACC vehicle; will be initialized during runtime
+#    - fov: field of view (sensor range)
+#    - v_max: maximum allowed velocity considering vehicle dynamics and safety based limit
+#    - v_min: minimum allowed velocity considering vehicle dynamics
+#    - v_limit_engine: velocity above which the engine power is not sufficient to cause wheel slip
+#    - drag_coefficient: drag coefficient
+#    - frontal area: frontal area fo vehicle
+ego_vehicle_param:
+    vehicle_type: 2
+    a_max: 3
+    a_min: -10.0
+    a_corr: 0.0
+    j_max: 10
+    j_min: -10
+    v_des: 30
+    t_react: 0.0
+    dynamics_param: None
+    fov: 200
+    v_max: None
+    v_min: 0
+    v_limit_engine: 50.8
+    drag_coefficient: 0
+    frontal_area: 0
+
+# Input constraint parameters
+###
+# .. code-block:: yaml
+#
+#    - air_density: air density
+#    - road_incline_angle: incline angle of the road
+#    - v_wind: headwind velocity
+#    - string_stability_horizon: time horizon which is considered for string stability
+#    - string_stability_gamma: parameter for string stability
+input_constr_param:
+    air_density: 0
+    road_incline_angle: 0
+    v_wind: 0
+    string_stability_horizon: 10
+    string_stability_gamma: 0.95
+
+# Other vehicle's parameters
+###
+# .. code-block:: yaml
+#
+#    - vehicle_number: CommonRoad vehicle number; possible options are 1, 2 or 3 (see CommonRoad vehicle models)
+#    - v_max: maximum velocity of leading vehicle
+#    - v_min: minimum velocity of leading vehicle
+#    - a_max: maximum acceleration of leading vehicle
+#    - a_min: minimum acceleration of leading vehicle
+#    - j_max: maximum jerk of leading vehicle
+#    - j_min: minimum jerk of leading vehicle
+#    - t_react: reaction time of leading vehicle
+#    - th_theta: orientation threshold for cut-in detection
+#    - th_offset: distance to center line threshold for cut-in detection
+#    - n_cutin: number of consecutive time steps for a cut-in occurrence to be finally recognized
+other_vehicles_param:
+    vehicle_number: 2
+    v_max: 60
+    v_min: 0
+    a_max: 5
+    a_min: -10.5
+    j_max: 10
+    j_min: -10
+    t_react: 0.0
+    dynamics_param: None
+    th_theta: 0.035
+    th_offset: 0.4
+    n_cutin: 10
+
+# ACC system parameters
+###
+#    - General parameters of the safe ACC
+#    - Parameters of the emergency controller
+#    - Parameters of the nominal ACC
+#    - Parameters of the cut-in reaction
+#    - Parameters of cruise control
+acc_param:
+    # General ACC parameters
+    ###
+    # .. code-block:: yaml
+    #
+    #    - const_dist_offset: minimum desired distance at standstill
+    #    - time_leave: time lag for which vehicle leaving ego vehicle's lane is still considered
+    #    - vehicle_reduction: activate/deactivate vehicle reduction methods
+    common:
+        const_dist_offset: 0.5
+        time_leave: 1
+        vehicle_reduction: true
+
+    # Parameters of emergency controller
+    ###
+    # .. code-block:: yaml
+    #
+    #    - num_steps_fb: number steps full brake part of emergency profile
+    #    - emergency_profile: comfortable part of emergency profile
+    emergency:
+        num_steps_fb: 190
+        emergency_profile: [-0.05, -0.1, -0.25, -0.45, -0.75, -1.25, -2.0, -3.0, -4.25, -6.0]
+
+    # Nominal ACC parameters
+    ###
+    # .. code-block:: yaml
+    #
+    #    - t_h: time horizon for optimization
+    #    - solver: solver for quadratic program; available_solvers
+    #    - cost_s: position cost for optimization
+    #    - cost_v: velocity cost for optimization
+    #    - cost_a: acceleration cost for optimization
+    #    - cost_j: jerk cost for optimization
+    nominal_acc:
+        t_h: 6.0
+        solver: quadprog
+        cost_s: 5
+        cost_v: 10
+        cost_a: 50
+        cost_j: 100
+
+    # Cut-in reaction parameters
+    ###
+    # .. code-block:: yaml
+    #
+    #   - cost_s: position cost for optimization
+    #   - cost_v: velocity cost for optimization
+    #   - cost_a: acceleration cost for optimization
+    #   - cost_j: jerk cost for optimization
+    #   - solver: solver for quadratic program; available_solvers
+    #   - a_min_cut_in: minimum assumed acceleration of vehicle during cut-in
+    #   - t_clear_min: maximum clearance time
+    #   - t_clear_max: maximum clearance time
+    #   - t_clear_step: step size of clearance time for generation of clearance time and safe distance lookup table
+    #   - v_ego_step: step size of ego velocity for generation of clearance time and safe distance lookup table
+    #   - v_cutin_step: step size of cut-in vehicle velocity for generation of clearance time and lookup table
+    #   - a_ego_step: step size of ego acceleration for generation of clearance time and safe distance lookup table
+    #   - delta_s_step: step size of distance for generation of clearance time and safe distance lookup table
+    #   - s_safe_step: step size for safe distance
+    cutin:
+        cost_s: 15
+        cost_v: 30
+        cost_a: 50
+        cost_j: 100
+        solver: quadprog
+        a_min_cut_in: -2
+        t_clear_min: 1
+        t_clear_max: 10
+        t_clear_step: 1
+        v_ego_step: 5
+        v_cutin_step: 10
+        a_ego_step: 2
+        delta_s_step: 5
+        s_safe_step: 20
+
+    # Cruise Control parameters
+    ###
+    # .. code-block:: yaml
+    #
+    #   - solver: solver for quadratic program; available_solvers
+    #   - t_h: time horizon for optimization
+    #   - cost_v: velocity cost for optimization
+    #   - cost_a: acceleration cost for optimization
+    #   - cost_j: jerk cost for optimization
+    cruise_control:
+        solver: quadprog
+        t_h: 6.0
+        cost_v: 30
+        cost_a: 50
+        cost_j: 100
+
+# Visualization parameters
+###
+#    - Parameters for plotting of profiles
+#    - Parameters for video creation
+visualization:
+    # Parameters for plotting of profiles
+    ###
+    # .. code-block:: yaml
+    #
+    #   - width: width of matplotlib figure
+    #   - line_width: line width of profiles
+    #   - font_size: font size of text within the plot
+    #   - axes_line_width: line width of the axes
+    #   - type of figure which should be stored
+    plot:
+        width: 3.75
+        line_width: 0.75
+        font_size: 9
+        axes_line_width: 0.25
+        figure_type: eps
+
+    # Parameters for video creation
+    ###
+    # .. code-block:: yaml
+    #
+    #   - obstacle_label: activate/deactivate visualization of obstacle label (ID) in video
+    video:
+        obstacle_label : false
