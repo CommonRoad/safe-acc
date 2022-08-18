@@ -243,7 +243,7 @@ class Simulation:
         x_lat_new = StateLateral(d_new, theta_new)
 
         # create Cartesian state
-        cartesian_coord = #TODO add conversion from Curvilinear to Cartesian
+        cartesian_coord = ego_lane.clcs.convert_to_cartesian_coords(s_new, d_new)
         theta_cart = np.interp(s_new, ego_lane.path_length, ego_lane.orientation)
         new_time_step = time_step + 1
         curvature = np.interp(s_new, ego_lane.path_length, ego_lane.curvature)

@@ -7,12 +7,13 @@ from typing import List, Dict, Tuple
 import matplotlib as mp
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+from commonroad.visualization.mp_renderer import MPRenderer
+from commonroad.visualization.renderer import IRenderer
 from matplotlib.animation import MovieWriter
 
 from commonroad.planning.planning_problem import PlanningProblemSet
 from commonroad.scenario.obstacle import DynamicObstacle
 from commonroad.scenario.scenario import Scenario
-from commonroad.visualization.draw_dispatch_cr import draw_object
 
 from common.configuration import Strategy
 from common.vehicle import Vehicle
@@ -91,7 +92,7 @@ draw_params_scenario = \
     }
 
 
-def plot_scenario_at_time_idx(time_idx: int, scenario: Scenario, obstacle_label: bool):
+def plot_scenario_at_time_idx(time_idx: int, scenario: Scenario, obstacle_label: bool, renderer: IRenderer):
     """
     Plots a scenario at a specific point in time.
     :param time_idx: the time point for which the scenario will be plotted
@@ -105,10 +106,10 @@ def plot_scenario_at_time_idx(time_idx: int, scenario: Scenario, obstacle_label:
     draw_params_scenario['scenario']['dynamic_obstacle']['shape']['rectangle']['facecolor'] = '#000099'
     draw_params_scenario['scenario']['dynamic_obstacle']['shape']['rectangle']['edgecolor'] = '#000099'
     draw_params_scenario['scenario']['dynamic_obstacle']['occupancy']['shape']['polygon']['opacity'] = .1
-    draw_object(scenario, draw_params=draw_params_scenario)
+    scenario.draw(renderer, draw_params=draw_params_scenario)
 
 
-def plot_vehicle_at_time_idx(time_idx: int, ego_obstacle: DynamicObstacle):
+def plot_vehicle_at_time_idx(time_idx: int, ego_obstacle: DynamicObstacle, renderer: IRenderer):
     """
     Plots the occupancy of a vehicle at a specific time point given its trajectory
     :param time_idx: the time point for which the scenario will be plotted
@@ -119,8 +120,7 @@ def plot_vehicle_at_time_idx(time_idx: int, ego_obstacle: DynamicObstacle):
                    'dynamic_obstacle': {'shape': {'facecolor': '#a9afae'}}}
     draw_params['dynamic_obstacle']['shape']['edgecolor'] = '#808080'
     draw_params['dynamic_obstacle']['draw_shape'] = True
-
-    draw_object(ego_obstacle, draw_params=draw_params)
+    ego_obstacle.draw(renderer, draw_params=draw_params)
 
 
 def create_scenario_video(out_path: str, scenario: Scenario, ego_obstacle: DynamicObstacle, visualization_param: Dict,
@@ -156,13 +156,15 @@ def create_scenario_video(out_path: str, scenario: Scenario, ego_obstacle: Dynam
                        dpi=150):
         for t in [state.time_step for state in ego_obstacle.prediction.trajectory.state_list]:
             plt.cla()
-            plot_scenario_at_time_idx(t, scenario, obstacle_label)
+            rnd = MPRenderer()
+            plot_scenario_at_time_idx(t, scenario, obstacle_label, rnd)
             if planning_problem_set is not None:
-                draw_object(planning_problem_set)
-            plot_vehicle_at_time_idx(t, ego_obstacle)
+                planning_problem_set.draw(rnd)
+            plot_vehicle_at_time_idx(t, ego_obstacle, rnd)
             plt.gca().set_aspect('equal')
             plt.gca().set_xlim([x_min, x_max])
             plt.gca().set_ylim([y_min, y_max])
+            rnd.render()
             writer.grab_frame()
 
 

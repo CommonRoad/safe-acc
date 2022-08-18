@@ -21,9 +21,6 @@ You can install the required Python packages with the provided
 Additionally, you need the following software:
 * *[CommonRoad Drivability Checker](https://gitlab.lrz.de/tum-cps/commonroad-drivability-checker)* 
 which has to be installed according to linked installation instructions inside the repository.
-* Software for the transformation from a Cartesian into a Curvilinear coordinate system and back. 
-Unfortunately, we cannot provide you code for this at the moment. 
-We added `TODO` to the code parts which require a conversion.
 
 ##### Running the safe ACC using CommonRoad
 The main files for the execution of the safe ACC are *config.yaml* and *main.py*:

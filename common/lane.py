@@ -4,6 +4,7 @@ import numpy as np
 from commonroad.scenario.scenario import Scenario
 from commonroad.scenario.lanelet import Lanelet
 from commonroad.scenario.trajectory import State
+from commonroad_dc.geometry.geometry import CurvilinearCoordinateSystem
 
 from common.vehicle import StateLongitudinal, StateLateral
 
@@ -142,7 +143,12 @@ class Lane:
         :param road_network_param: dictionary containing parameters of the road network
         :returns curvilinear coordinate system for reference path
         """
-        # TODO Add code for the creation of a curvilinear coordinate system
+        return CurvilinearCoordinateSystem(ref_path,
+                                           # default_projection_domain_limit=50.,
+                                           # eps=1.,
+                                           resample=True,
+                                           num_chaikins_corner_cutting=road_network_param['num_chaikins_corner_cutting'],
+                                           max_polyline_resampling_step=road_network_param['polyline_resampling_step'])
 
     def create_curvilinear_state(self, state: State, prev_state: Union[State, None], dt: float) \
             -> Tuple[StateLongitudinal, StateLateral]:
@@ -154,7 +160,7 @@ class Lane:
         :param dt: time step size
         :return: lateral and longitudinal state of vehicle
         """
-        s, d =  # TODO add conversion from Cartesian into Curvilinear
+        s, d = self._clcs.convert_to_curvilinear_coords(state.position[0], state.position[1])
         theta_cl = np.interp(s, self._path_length, self._orientation)
         if prev_state is not None:
             x_lon = StateLongitudinal(s, state.velocity, (state.velocity - prev_state.velocity) / dt)
