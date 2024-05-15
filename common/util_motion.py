@@ -34,13 +34,14 @@ def emg_stopping_distance(s, v: float, a: float, dt: float, t_react: float, a_mi
 
     # application of the emergency profile:
     index = 0
+    print("len(emergency_profile):", len(emergency_profile))
     while v > 0:
         a = min(a + a_corr, a_max)
         if v == v_max:
             a = 0
         s, v, a = vehicle_dynamics_jerk(s, v, a, emergency_profile[index], v_min, v_max, a_min, a_max, dt)
         index += 1
-
+        # print("index:", index)
     return s
 
 

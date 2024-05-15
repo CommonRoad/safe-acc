@@ -1,8 +1,6 @@
 import pickle
 import os
-from commonroad.scenario.obstacle import DynamicObstacle
-from commonroad.prediction.prediction import TrajectoryPrediction
-from commonroad.scenario.trajectory import Trajectory
+
 
 from common.simulation import Simulation
 from common.configuration import load_yaml, create_acc_param, create_ego_vehicle_param
@@ -17,6 +15,7 @@ def main():
     config = load_yaml("config.yaml")
     simulation_param = config.get("simulation_param")
     acc_param = create_acc_param(config.get("acc_param"), config.get("ego_vehicle_param").get("j_min"))
+    nominal_acc = acc_param.get("nominal_acc") # Added
     other_vehicles_param = config.get("other_vehicles_param")
     ego_vehicle_param = create_ego_vehicle_param(config.get("ego_vehicle_param"), simulation_param, acc_param)
     input_constr_param = config.get("input_constr_param")
@@ -35,14 +34,16 @@ def main():
     sim = Simulation(simulation_param, road_network_param, acc_param, ego_vehicle_param, other_vehicles_param,
                      input_constr_param, recapturing_data_nominal, recapturing_data_acc_bounded,
                      recapturing_controllers)
-    sim.simulate()
 
-    # Create dynamic obstacle object for ego vehicle
-    ego_trajectory = Trajectory(0, sim.ego_vehicle.state_list_cr)
-    ego_prediction = TrajectoryPrediction(ego_trajectory, sim.ego_vehicle.shape)
-    ego_obstacle = DynamicObstacle(sim.ego_vehicle.id, sim.ego_vehicle.obstacle_type, sim.ego_vehicle.shape,
-                                   sim.ego_vehicle.state_list_cr[0], ego_prediction)
+    sim.simulate(nominal_acc)
+    #print("nominal_acc:", nominal_acc.get("distance"))
+    sim.get_plots()
+    #print("sim._ego_vehicle[0]._safe_distance_list:", sim._ego_vehicle[1]._safe_distance_list)
 
+    # take out leading vehicle A as dynamical obstacle
+    #ego_obstacle = sim.scenario.dynamic_obstacles[-len(sim._planning_problem)]
+    #ego_obstacle = sim.scenario.dynamic_obstacles[0]
+    ego_obstacle = None
     # Generate output (video/plots)
     if simulation_param.get("commonroad_video_creation") is True or simulation_param.get("store_profiles") is True \
             or simulation_param.get("profile_video_creation") is True:
@@ -57,7 +58,7 @@ def main():
         if not os.path.exists("./" + simulation_param.get("video_output_folder")):
             os.mkdir("./" + simulation_param.get("video_output_folder"))
         if not os.path.exists(path):
-            os.mkdir(path)
+            os.mkdir(path) # create the path.
     else:
         path = "./"
     if simulation_param.get("commonroad_video_creation") is True:

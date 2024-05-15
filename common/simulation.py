@@ -7,7 +7,7 @@ import os
 from commonroad.common.file_reader import CommonRoadFileReader
 from commonroad.geometry.shape import Rectangle
 from common.obstacle_selection import ObstacleSelection
-from commonroad.scenario.obstacle import ObstacleType
+from commonroad.scenario.obstacle import ObstacleType, DynamicObstacle, ObstacleRole
 from commonroad.scenario.scenario import Scenario
 from commonroad.planning.planning_problem import PlanningProblemSet
 from commonroad.common.solution import VehicleType
@@ -23,6 +23,7 @@ from commonroad_dc.feasibility.vehicle_dynamics import VehicleDynamics
 from common.configuration import *
 from common.vehicle import Vehicle, StateLateral, StateLongitudinal
 from commonroad.scenario.trajectory import State
+from commonroad.scenario.state import InitialState
 from common.quadratic_program import QP
 from acc.safe_acc import SafeACC
 from acc.cruise_control import CruiseControl
@@ -30,7 +31,9 @@ from acc.recapturing_control import RecapturingControl
 from acc.safety_layer import SafetyLayer
 from acc.nominal_acc import NominalACC
 from common.lane import Lane, get_lanes
+from common.util_motion import safe_distance_profile_based
 
+import json
 
 class Simulation:
     """
@@ -63,7 +66,9 @@ class Simulation:
         self._ego_vehicle_param = ego_vehicle_param
         self._input_constr_param = input_constr_param
         self._comp_time = []
-        self._ego_vehicle = None
+        self._ego_vehicle = []
+        #self._ego_vehicle = None
+        #self._follower_vehicle = None # ADDED
         self._road_network_param = road_network_param
 
         # Initialization of CommonRoad related variables
@@ -71,8 +76,11 @@ class Simulation:
             "commonroad_benchmark_id") + ".xml"
         self._scenario, self._planning_problem_set = \
             CommonRoadFileReader(cr_file).open()
-        self._planning_problem = list(self._planning_problem_set.planning_problem_dict.values())[0]
 
+
+        # self._planning_problem = list(self._planning_problem_set.planning_problem_dict.values())[0]
+        self._planning_problem = list(self._planning_problem_set.planning_problem_dict.values())
+        #self._planning_problem_follower = list(self._planning_problem_set.planning_problem_dict.values())[1] # ADDED
         self._cc = create_collision_checker(self._scenario)
         _, self._road_boundary_sg_rectangles = \
             boundary.create_road_boundary_obstacle(self._scenario, method='obb_rectangles')
@@ -130,87 +138,281 @@ class Simulation:
                 max_time = obstacle.prediction.trajectory.state_list[-1].time_step
 
         if max_time == 0:
-            max_time = int(self._planning_problem.goal.state_list[0].time_step.end / 2)
+            # self._planning_problem[0] ... leading vehicle A. Defines amount of time_steps for propagation (from start to goal position)
+            max_time = int(self._planning_problem[0].goal.state_list[0].time_step.end / 2)
+        #max_time = 1000 # CHANGED
         return max_time
 
-    def simulate(self):
-        """
-        Simulates CommonRoad scenario using an ego vehicle equipped with the safe ACC
-        """
-        # Initialization lane related variables
-        if self._planning_problem.initial_state.velocity == 0:
-            initial_steering_angle = 0
-        else:
-            initial_steering_angle = 0  # we assume a standing vehicle has steering angle 0
-        initial_ego_state = State(position=self._planning_problem.initial_state.position,
-                                  velocity=self._planning_problem.initial_state.velocity,
-                                  orientation=self._planning_problem.initial_state.orientation,
-                                  steering_angle=initial_steering_angle, time_step=0)
+    def vehicle_definition(self, planning_problem: Dict, initial_steering_angle: int):
+        # define for planning_problem the "Initial_State", "Vehicle" and "ego_vehicle_as_obstacle"
+
+        initial_ego_state = InitialState()
+        initial_ego_state.position = planning_problem.initial_state.position
+        initial_ego_state.velocity = planning_problem.initial_state.velocity
+        initial_ego_state.orientation = planning_problem.initial_state.orientation
+        initial_ego_state.steering_angle = initial_steering_angle
+        initial_ego_state.time_step = 0
+
+        # print("init_ego_state:", initial_ego_state.position)
+        # initial_ego_state.position ... XML file defines initial position of ego vehicle in cartesian coordinates
+        # ego_lanelet_id ... ID of the lanelet, in which the vehicle lies at timestep ts == 0.
         ego_lanelet_id = self._scenario.lanelet_network.find_lanelet_by_position(
-                    [initial_ego_state.position])[0][0]
+            [initial_ego_state.position])[0][0]
         ego_lane, left_lane, right_lane = get_lanes(self._scenario, ego_lanelet_id, self._road_network_param)
 
         # Initialization of ego vehicle object
         ego_state_lon, ego_state_lat = ego_lane.create_curvilinear_state(initial_ego_state, None, self._dt)
         ego_state_lat.d = 0
-        self._ego_vehicle = Vehicle(ego_state_lon, ego_state_lat,
+
+        vehicle = Vehicle(ego_state_lon, ego_state_lat,
                                     Rectangle(parameters_vehicle2().l, parameters_vehicle2().w), LaneCategory.SAME,
                                     initial_ego_state, self._scenario.generate_object_id(), ObstacleType.CAR,
                                     ego_lane.contained_lanelets)
 
-        # Start simulation
+        obstacle_id = planning_problem.planning_problem_id
+        obstacle_type = ObstacleType.CAR # CHANGE TO TRAIN
+        initial_state = initial_ego_state
+        shape = Rectangle(parameters_vehicle2().l, parameters_vehicle2().w)
+        ego_as_obstacle = DynamicObstacle(obstacle_id, obstacle_type, shape, initial_state)
+        ego_as_obstacle.initial_signal_state = None
+        ego_as_obstacle.initial_center_lanelet_ids = set([ego_lanelet_id])
+        ego_as_obstacle.initial_shape_lanelet_ids = set([ego_lanelet_id])
+        ego_as_obstacle.obstacle_role = ObstacleRole.DYNAMIC
+        ego_as_obstacle.signal_series = []
+        ego_as_obstacle.external_dataset_id = None
+        ego_as_obstacle.initial_meta_information_state = None
+        ego_as_obstacle.meta_information_series = None
+
+        # define "ego_as_obstacle", "ego_lanelet_id", "ego_lane", "left_lane", "right_lane" as values of similar named attributes of current vehicle object
+        vehicle.ego_as_obstacle = ego_as_obstacle
+        vehicle.ego_lanelet_id = ego_lanelet_id
+        vehicle.ego_lane = ego_lane
+        vehicle.left_lane = left_lane
+        vehicle.right_lane = right_lane
+
+        return vehicle
+
+
+    def propagation(self, vehicle: Dict, time_step: int, ego_lanelet_id: int, ego_lane: Lane, left_lane: Lane, right_lane: Lane, nominal_acc: Dict, flag_B: bool, vehicle_counter: int):
+
+        # Load obstacles in the field of view of the ego vehicle at current time step. Important for A, not B..
+        obstacles_at_current_time_step = self._scenario.obstacles_by_position_intervals([Interval(
+            vehicle.states_cr[time_step].position[0] - self._ego_vehicle_param.get("fov"),
+            vehicle.states_cr[time_step].position[0] + self._ego_vehicle_param.get("fov")),
+            Interval(vehicle.states_cr[time_step].position[1] - self._ego_vehicle_param.get("fov"),
+                     vehicle.states_cr[time_step].position[1] + self._ego_vehicle_param.get("fov"))],
+            time_step=time_step)
+        #print("obstacles_at_current_time_step:", obstacles_at_current_time_step)
+        self._scenario.assign_obstacles_to_lanelets([time_step],
+                                                    {obs.obstacle_id for obs in obstacles_at_current_time_step})
+        current_ego_lanelet_id = \
+            self._scenario.lanelet_network.find_lanelet_by_position(
+                [vehicle.states_cr[time_step].position])[0][0]
+        if current_ego_lanelet_id != ego_lanelet_id \
+                and current_ego_lanelet_id != \
+                self._scenario.lanelet_network.find_lanelet_by_id(current_ego_lanelet_id).successor:
+            ego_lane, left_lane, right_lane = get_lanes(self._scenario, ego_lanelet_id, self._road_network_param)
+            ego_lanelet_id = current_ego_lanelet_id
+
+        vehicles_fov_same_lane, vehicles_fov_cutin = \
+            self._object_selection.extract_vehicles(time_step, vehicle,
+                                                    self.safe_acc.emergency_maneuver_activity[-1], ego_lane,
+                                                    left_lane, right_lane)
+
+        start_time = 0
+        if self._time_measuring:
+            start_time = timer()
+
+        # Calculate ego vehicle input
+        # A
+        if flag_B == False:
+            a_lon = self._safe_acc.execute(vehicles_fov_same_lane, vehicles_fov_cutin, vehicle, time_step) # Leading Vehicle A (very first leading vehicle in Platoon)
+        else:
+        # B
+            a_ego = vehicle._states_lon[time_step]._a
+            v_ego = vehicle._states_lon[time_step]._v
+            v_lead = self._ego_vehicle[vehicle_counter-1]._states_lon[time_step]._v
+            a_lead = self._ego_vehicle[vehicle_counter - 1]._states_lon[time_step]._a
+            s_ego = vehicle._states_lon[time_step]._s + vehicle.shape.length/2
+            s_lead = self._ego_vehicle[vehicle_counter-1]._states_lon[time_step]._s - self._ego_vehicle[vehicle_counter-1].shape.length / 2
+            #distance = nominal_acc.get("distance")
+            # distance = safe_distance_profile_based(s_ego, v_ego, a_ego, s_lead, v_lead, self._safety_layer._dt,
+            #                                            self._safety_layer._t_react, self._safety_layer._a_min_ego, self._safety_layer._a_max_ego, self._safety_layer._j_max_ego,
+            #                                            self._safety_layer._v_min_ego, self._safety_layer._v_max_ego, self._safety_layer._a_min_other,
+            #                                            self._safety_layer._v_min_other, self._safety_layer._v_max_other, self._safety_layer._a_corr,
+            #                                            self._safety_layer._const_dist_offset, self._safety_layer._emergency_profile, 0)
+            distance = v_ego/(3.6*3) # unsafe distance for the following vehicle B Used by Nominal Controller. If emergency -- switching to Emergency Controller
+            #print("v_ego:", v_ego)
+            #print("a_ego:", a_ego)
+            #print("v_lead:", v_lead)
+            #print("a_lead:", a_lead)
+            #print("distance:", distance)
+            a_lon = self._safety_layer.calculate_acceleration(vehicle, [self._ego_vehicle[vehicle_counter-1]], time_step, distance, flag_B)[0]
+            print("s_lead - s_ego:", s_lead - s_ego)
+
+        #print("a_lon:", a_lon)
+        # Apply input constraints
+        a_lon = self.apply_input_constraints(a_lon, vehicle.states_lon[time_step].v,
+                                             vehicles_fov_same_lane, time_step)
+        #print("a_lon:", a_lon)
+        if self._time_measuring:
+            end_time = timer()
+            self._comp_time.append(end_time - start_time)
+
+        # Propagate ego vehicle
+        return self.propagate_ego_vehicle(vehicle, self._dt, a_lon, ego_lane, time_step)
+
+
+    def add_vehicle_as_dynamical_obstical(self, ego_as_obstacle, ego_vehicle, time_step):
+
+        # self._ego_vehicle[-1].state_list_cr ... consider only the states of the last added vehicle (either leading (A) or following vehicle (B))
+        trajectory = Trajectory(0, ego_vehicle.state_list_cr)
+        traj_pred = TrajectoryPrediction(trajectory=trajectory, shape=ego_vehicle.shape)
+
+        # Update "traj_pred". "trag_pred" ... DynamicObstacle.prediction object
+        lanelet_dict = {}
+        for i in range(time_step + 2):
+            lanelet_id = self._scenario.lanelet_network.find_lanelet_by_position(
+                [ego_vehicle.state_list_cr[i].position])[0][0]
+            lanelet_dict[i] = set([lanelet_id])
+        traj_pred.center_lanelet_assignment = lanelet_dict
+        traj_pred.shape_lanelet_assignment = lanelet_dict
+        # Update ego vehicle as obstacle ("ego_as_obstacle") with Prediction
+        # self.prediction.occupancy_set ...
+        # self ... object class DynamicObstacle
+        # prediction ... object class "TrajectoryPrediction"
+        # occupancy_set ... defined by "prediction.TrajectoryPrediction._create_occupancy_set()" as attribute of object class "TrajectoryPrediction"
+        ego_as_obstacle.prediction = traj_pred  # Update object
+        self.scenario.add_objects(ego_as_obstacle)  # add leading vehicle (A) as DynamicObstical object to list of dynamic obsticals (for B)
+
+    def get_plots(self):
+
+
+        ONE = []
+        position_center_ALL = []
+        velocity_ALL = []
+        acceleration_ALL = []
+        jerk_ALL = []
+        position_exposed_ALL = [] # [0] ... rear leading car A, [1] ... rear following car B
+        distance = [] # distance between A and B. A is leading vehicle. B is following vehicle
+
+        for vehicle in self._ego_vehicle:
+
+            ONE = []
+            for state in vehicle._states_lon.values():
+                ONE.append(float(state._s))
+            position_center_ALL.append(ONE)
+            ONE = []
+            for state in vehicle.states_cr.values():
+                ONE.append(float(state.velocity))
+            velocity_ALL.append(ONE)
+            ONE = []
+            for state in vehicle._states_lon.values():
+                ONE.append(float(state._a))
+            acceleration_ALL.append(ONE)
+            ONE = []
+            for jerk in vehicle._jerk_list.values():
+                ONE.append(float(jerk))
+            jerk_ALL.append(ONE)
+            ONE = []
+
+        for position in self._ego_vehicle[0]._states_lon.values():
+            ONE.append(position._s - self._ego_vehicle[0].shape.length / 2)
+        position_exposed_ALL.append(ONE)
+        ONE = []
+        for position in self._ego_vehicle[1]._states_lon.values():
+            ONE.append(position._s + self._ego_vehicle[1].shape.length / 2)
+        position_exposed_ALL.append(ONE)
+
+        for i in range(len(position_exposed_ALL[0])):
+            distance.append(position_exposed_ALL[0][i] - position_exposed_ALL[1][i])
+
+        dict_output = {
+            "position_center": position_center_ALL,
+            "distance": distance,
+            "velocity": velocity_ALL,
+            "acceleration:": acceleration_ALL,
+            "jerk": jerk_ALL
+                    }
+
+        with open('data.json', 'w') as file:
+            json.dump(dict_output, file)
+
+    def planning_problem__to__vehicle(self):
+        for planning_problem in self._planning_problem: # leading vehicle (A) and following vehicle (B)
+            # Initialization lane related variables
+            if planning_problem.initial_state.velocity == 0:
+                initial_steering_angle = 0
+            else:
+                initial_steering_angle = 0  # we assume a standing vehicle has steering angle 0
+
+            # Definition Leader Vehicle (self._ego_vehicle) and Follower Vehicle (self._follower_vehicle) as objects of class "Vehicle"
+            ego_vehicle = self.vehicle_definition(planning_problem, initial_steering_angle)
+            self._ego_vehicle.append(ego_vehicle)
+
+    def propagate_platoon_for_one_time_step(self, time_step: int, nominal_acc: Dict):
+
+        flag_B = False  # Safe_ACC for leading vehicle A
+        vehicle_counter = 0
+        # Propagate over all vehicles for the one timestep. Vehicles are aligned in a platoon
+        print("len(self._ego_vehicle):", len(self._ego_vehicle))
+        for index, vehicle in enumerate(self._ego_vehicle):
+
+            # get necessary parameters
+            ego_lanelet_id = vehicle.ego_lanelet_id
+            ego_lane = vehicle.ego_lane
+            left_lane = vehicle.left_lane
+            right_lane = vehicle.right_lane
+
+            if index == 0:
+                print("A")
+
+                vehicle = self.propagation(vehicle, time_step, ego_lanelet_id, ego_lane, left_lane, right_lane,
+                                           nominal_acc, flag_B, index)
+            else:
+                flag_B = True  # Nominal_ACC for all following vehicles B
+                print("B")
+
+                vehicle = self.propagation(vehicle, time_step, ego_lanelet_id, ego_lane, left_lane, right_lane,
+                                           nominal_acc, flag_B, index)
+                print(vehicle)
+        flag_B = None # save definition
+
+    def parameters_for_collision_and_goal_check(self, time_step: int):
+        trajectory = Trajectory(time_step + 1, [self._ego_vehicle[0].state_list_cr[time_step + 1]])
+        traj_pred = TrajectoryPrediction(trajectory=trajectory, shape=self._ego_vehicle[0].shape)
+        co = create_collision_object(traj_pred)
+
+        return trajectory, co
+
+    def simulate(self, nominal_acc: Dict):
+        """
+        Simulates CommonRoad scenario using an ego vehicle equipped with the safe ACC
+        """
+
+        # turn a "planning_problem" into a "vehicle"
+        self.planning_problem__to__vehicle()
+
         for time_step in range(0, self.get_max_scenario_duration()):
             print("time step: " + str(time_step))
-            # Load obstacles in the field of view of the ego vehicle at current time step
-            obstacles_at_current_time_step = self._scenario.obstacles_by_position_intervals([Interval(
-                self._ego_vehicle.states_cr[time_step].position[0] - self._ego_vehicle_param.get("fov"),
-                self._ego_vehicle.states_cr[time_step].position[0] + self._ego_vehicle_param.get("fov")),
-                Interval(self._ego_vehicle.states_cr[time_step].position[1] - self._ego_vehicle_param.get("fov"),
-                         self._ego_vehicle.states_cr[time_step].position[1] + self._ego_vehicle_param.get("fov"))],
-                time_step=time_step)
-            self._scenario.assign_obstacles_to_lanelets([time_step],
-                                                        {obs.obstacle_id for obs in obstacles_at_current_time_step})
-            current_ego_lanelet_id = \
-                self._scenario.lanelet_network.find_lanelet_by_position(
-                    [self._ego_vehicle.states_cr[time_step].position])[0][0]
-            if current_ego_lanelet_id != ego_lanelet_id \
-                    and current_ego_lanelet_id != \
-                    self._scenario.lanelet_network.find_lanelet_by_id(current_ego_lanelet_id).successor:
-                ego_lane, left_lane, right_lane = get_lanes(self._scenario, ego_lanelet_id, self._road_network_param)
-                ego_lanelet_id = current_ego_lanelet_id
 
-            vehicles_fov_same_lane, vehicles_fov_cutin = \
-                self._object_selection.extract_vehicles(time_step, self._ego_vehicle,
-                                                        self.safe_acc.emergency_maneuver_activity[-1], ego_lane,
-                                                        left_lane, right_lane)
-
-            start_time = 0
-            if self._time_measuring:
-                start_time = timer()
-
-            # Calculate ego vehicle input
-            a_lon = self._safe_acc.execute(vehicles_fov_same_lane, vehicles_fov_cutin, self._ego_vehicle, time_step)
-
-            # Apply input constraints
-            a_lon = self.apply_input_constraints(a_lon, self._ego_vehicle.states_lon[time_step].v,
-                                                 vehicles_fov_same_lane, time_step)
-            if self._time_measuring:
-                end_time = timer()
-                self._comp_time.append(end_time - start_time)
-
-            # Propagate ego vehicle
-            self._ego_vehicle = self.propagate_ego_vehicle(self._ego_vehicle, self._dt, a_lon, ego_lane, time_step)
+            # propagate all vehicles of the platoon for one timestep
+            self.propagate_platoon_for_one_time_step(time_step, nominal_acc)
 
             # Collision and goal region check
-            trajectory = Trajectory(time_step + 1, [self.ego_vehicle.state_list_cr[time_step + 1]])
-            traj_pred = TrajectoryPrediction(trajectory=trajectory, shape=self._ego_vehicle.shape)
-            co = create_collision_object(traj_pred)
+            trajectory, co = self.parameters_for_collision_and_goal_check(time_step)
+
             if self._cc.collide(co):
                 print("collision")
                 break
-            if self._planning_problem.goal_reached(trajectory)[0] is True:
+
+            if self._planning_problem[0].goal_reached(trajectory)[0] is True:
                 print("goal reached")
+                # Turn all vehicles element platoon into dynamic obstacles. E.g., to later on plot them in the later functions
+                for ego_vehicle in self._ego_vehicle:
+                    self.add_vehicle_as_dynamical_obstical(ego_vehicle.ego_as_obstacle, ego_vehicle,time_step)
                 break
+
 
     def propagate_ego_vehicle(self, ego_vehicle: Vehicle, dt: float, a_lon: float,
                               ego_lane: Lane, time_step: int) -> Vehicle:
@@ -244,13 +446,19 @@ class Simulation:
 
         # create Cartesian state
         cartesian_coord = ego_lane.clcs.convert_to_cartesian_coords(s_new, d_new)
+        print("cartesian_coord = ego_lane.clcs.convert_to_cartesian_coords(s_new, d_new):", cartesian_coord)
         theta_cart = np.interp(s_new, ego_lane.path_length, ego_lane.orientation)
         new_time_step = time_step + 1
         curvature = np.interp(s_new, ego_lane.path_length, ego_lane.curvature)
-        x_cr_new = State(position=cartesian_coord, velocity=v_new, orientation=theta_cart,
-                         steering_angle=math.atan(self._ego_vehicle_param.get("dynamics_param").l * curvature),
-                         time_step=new_time_step)
-
+        #x_cr_new = State(position=cartesian_coord, velocity=v_new, orientation=theta_cart,
+        #                 steering_angle=math.atan(self._ego_vehicle_param.get("dynamics_param").l * curvature),
+        #                 time_step=new_time_step)
+        x_cr_new = State()
+        x_cr_new.position = cartesian_coord
+        x_cr_new.velocity = v_new
+        x_cr_new.orientation = theta_cart
+        x_cr_new.steering_angle = math.atan(self._ego_vehicle_param.get("dynamics_param").l * curvature)
+        x_cr_new.time_step = new_time_step
         # add new states to ego vehicle object
         ego_vehicle.append_state_lon(x_lon_new, new_time_step)
         ego_vehicle.append_state_lat(x_lat_new, new_time_step)
@@ -259,7 +467,6 @@ class Simulation:
         ego_vehicle.append_maneuver(Maneuver.LANE_FOLLOWING, new_time_step)
         ego_vehicle.append_safe_distance(0, new_time_step)
         ego_vehicle.append_jerk((a_lon - ego_vehicle.states_lon[time_step].a) / dt, time_step)
-
         return ego_vehicle
 
     def apply_input_constraints(self, a: float, v_cur: float, vehicles_same_lane: List[Vehicle],

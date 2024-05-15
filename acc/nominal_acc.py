@@ -80,16 +80,25 @@ class NominalACC:
             a_ego = 0.0
         x_0 = np.array([[s_lead - s_ego], [v_lead - v_ego], [a_ego]])
 
-        self._qp.update_qp_matrices_const(x_0, [safe_distance + 5, 0, 0], constraints=((safe_distance, None),
+        self._qp.update_qp_matrices_const(x_0, [safe_distance+5, 0, 0], constraints=((safe_distance, None),
                                                                                        (v_lead - self._v_max, v_lead),
                                                                                        (self._a_min, self._a_max)))
-        try:
-            jerk = self._qp.solve()
-        except:
-            if self._verbose:
-                print("Nominal ACC: Quadratic program found no solution")
-                print(a_ego, v_ego, v_lead, s_ego, s_lead, safe_distance)
+        #try:
+        #    jerk = self._qp.solve()# online verification via jerk. Search for crash
+        #except:
+            # Crash is incoming due to limited jerk-interval of Nominal Controller. No comfort anymore -- Emergency Controller needed (safety)
+        #    if self._verbose:
+        #        print("Nominal ACC: Quadratic program found no solution")
+        #        print(a_ego, v_ego, v_lead, s_ego, s_lead, safe_distance)
+        #    return None
+        jerk = self._qp.solve()
+        if jerk is None:
+            print("Nominal ACC: Quadratic program found no solution")
+            print(a_ego, v_ego, v_lead, s_ego, s_lead, safe_distance)
             return None
+        #print("jerk:", jerk)
+        #if jerk[0] is None:
+        #    return None
         acceleration = jerk[0] * self._dt + a_ego
 
         return acceleration

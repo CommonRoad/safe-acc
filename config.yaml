@@ -17,16 +17,18 @@
 #    - figure_output_folder: folder in which the created figures are stored (relative to path of this file)
 simulation_param:
     dt: 0.1
-    commonroad_benchmark_id: USA_US101-13_5_T-1
+    # commonroad_benchmark_id: USA_US101-13_5_T-1
+    commonroad_benchmark_id: ZAM_GenfTramExtended-1_1_T-1
     commonroad_scenario_folder: scenarios
     verbose_mode: false
     time_measuring: false
+    #commonroad_video_creation: false
     commonroad_video_creation: false
     profile_video_creation: false
     video_output_folder: videos
     plotting_profiles: false
     other_vehicle_plots: [140]
-    store_profiles: true
+    store_profiles: false
     figure_output_folder: figures
 
 # road network and curvilinear coordinate system parameters
@@ -62,11 +64,11 @@ road_network_param:
 ego_vehicle_param:
     vehicle_type: 2
     a_max: 3
-    a_min: -10.0
+    a_min: -10
     a_corr: 0.0
     j_max: 10
     j_min: -10
-    v_des: 30
+    v_des: 20
     t_react: 0.0
     dynamics_param: None
     fov: 200
@@ -146,10 +148,12 @@ acc_param:
     # .. code-block:: yaml
     #
     #    - num_steps_fb: number steps full brake part of emergency profile
-    #    - emergency_profile: comfortable part of emergency profile
+    #    - emergency_profile: comfortable part of emergency profile (regarding Nominal Controller)
     emergency:
         num_steps_fb: 190
+        #num_steps_fb: 1000
         emergency_profile: [-0.05, -0.1, -0.25, -0.45, -0.75, -1.25, -2.0, -3.0, -4.25, -6.0]
+        #emergency_profile: [-0.005, -0.01, -0.025, -0.045, -0.075, -0.125, -0.20, -0.30, -0.425, -0.60] # NEW
 
     # Nominal ACC parameters
     ###
@@ -168,6 +172,7 @@ acc_param:
         cost_v: 10
         cost_a: 50
         cost_j: 100
+        distance: 10
 
     # Cut-in reaction parameters
     ###

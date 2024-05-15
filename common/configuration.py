@@ -1,3 +1,4 @@
+from ruamel.yaml import YAML
 from vehiclemodels.parameters_vehicle1 import parameters_vehicle1
 from vehiclemodels.parameters_vehicle2 import parameters_vehicle2
 from vehiclemodels.parameters_vehicle3 import parameters_vehicle3
@@ -70,6 +71,9 @@ def calc_v_max(ego_vehicle_param: Dict, simulation_param: Dict, acc_param: Dict)
             v_max = v_min
         stopping_distance = emg_stopping_distance(s_ego, v_ego, a_ego, dt, t_react, a_min, a_max, j_max, v_min, v_max,
                                                   a_corr, emergency_profile)
+        #print("stopping distance -- type:", type(stopping_distance))
+        #print("ego_vehicle_param.get -- TYPE:", type(ego_vehicle_param.get("fov")))
+        #print("acc_param.get -- TYPE:", type(acc_param.get("common").get("const_dist_offset")))
         dist_offset = ego_vehicle_param.get("fov") - stopping_distance - acc_param.get("common").get(
             "const_dist_offset")
 
@@ -146,7 +150,9 @@ def load_yaml(file_name: str) -> Union[Dict, None]:
     """
     with open(file_name, 'r') as stream:
         try:
-            config = ruamel.yaml.round_trip_load(stream, preserve_quotes=True)
+            yaml= YAML()
+            config= yaml.load(stream)
+            #config = ruamel.yaml.round_trip_load(stream, preserve_quotes=True)
             return config
         except ruamel.yaml.YAMLError as exc:
             print(exc)

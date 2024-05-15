@@ -59,7 +59,7 @@ class SafetyLayer:
                                                             self.activated_emergency_acc_profile[-1] + jerk * self._dt))
 
     def validate_input(self, jerk: float, leading_vehicle: Vehicle, ego_vehicle: Vehicle,
-                       time_step: int) -> bool:
+                       time_step: int, safe_distance: float = None) -> bool:
         """
         Validates input with respect to safe distance at next time step
 
@@ -86,19 +86,21 @@ class SafetyLayer:
         s_lead, v_lead = vehicle_dynamics_acc(leading_vehicle.rear_position(time_step),
                                               leading_vehicle.states_lon[time_step].v, self._a_min_other,
                                               self._v_min_other, self._v_max_other, self._dt)
-
-        safe_distance = safe_distance_profile_based(s_ego, v_ego, a_ego, s_lead, v_lead, self._dt,
-                                                    self._t_react, self._a_min_ego, self._a_max_ego, self._j_max_ego,
-                                                    self._v_min_ego, self._v_max_ego, self._a_min_other,
-                                                    self._v_min_other, self._v_max_other, self._a_corr,
-                                                    self._const_dist_offset, self._emergency_profile, 0)
+        if safe_distance is None:
+            safe_distance = safe_distance_profile_based(s_ego, v_ego, a_ego, s_lead, v_lead, self._dt,
+                                                        self._t_react, self._a_min_ego, self._a_max_ego, self._j_max_ego,
+                                                        self._v_min_ego, self._v_max_ego, self._a_min_other,
+                                                        self._v_min_other, self._v_max_other, self._a_corr,
+                                                        self._const_dist_offset, self._emergency_profile, 0)
+        else:
+            safe_distance = safe_distance + 5
 
         if s_lead - s_ego > safe_distance:
             return True
         else:
             return False
 
-    def calculate_acceleration(self, ego_vehicle: Vehicle, vehicles: List[Vehicle], time_step: int) -> List[float]:
+    def calculate_acceleration(self, ego_vehicle: Vehicle, vehicles: List[Vehicle], time_step: int, distance: float=None, flag_B: bool=None) -> List[float]:
         """
         Calculates input acceleration for each vehicle in field of view within the ego vehicle's lane
         For all vehicles which activate emergency maneuver a single input is returned
@@ -110,30 +112,47 @@ class SafetyLayer:
         :returns list of accelerations
         """
         acceleration_list = []
-        emergency_active = False    # emergency maneuver already activated this time step
+        #emergency_active = False    # emergency maneuver already activated this time step
+        ego_vehicle.emergency_active = False
         for veh in vehicles:
-            a = self.acc.calculate_input(ego_vehicle.states_lon[time_step].a,
-                                         ego_vehicle.states_lon[time_step].v, veh.states_lon[time_step].v,
-                                         ego_vehicle.front_position(time_step), veh.rear_position(time_step),
-                                         veh.safe_distance_list[time_step])
-            if a is None or not self.validate_input(a, veh, ego_vehicle, time_step):
+            # following vehicle B
+            if flag_B is not None:
+                a = self.acc.calculate_input(ego_vehicle.states_lon[time_step].a,
+                                             ego_vehicle.states_lon[time_step].v, veh.states_lon[time_step].v,
+                                             ego_vehicle.front_position(time_step), veh.rear_position(time_step),
+                                             distance)
+            # leading vehicle A
+            else:
+                a = self.acc.calculate_input(ego_vehicle.states_lon[time_step].a,
+                                             ego_vehicle.states_lon[time_step].v, veh.states_lon[time_step].v,
+                                             ego_vehicle.front_position(time_step), veh.rear_position(time_step),
+                                             veh.safe_distance_list[time_step])
+            #print("emergency a:", a)
+            #print("self.validate_input(a, veh, ego_vehicle, time_step, distance):", self.validate_input(a, veh, ego_vehicle, time_step, distance))
+            if a is None or not self.validate_input(a, veh, ego_vehicle, time_step, distance):
                 if self._verbose:
                     if a is None:
                         print("Other vehicle ID: " + str(veh.id))
                     print("Emergency Maneuver active")
-                emergency_active = True
+                # emergency_active = True
+                ego_vehicle.emergency_active = True
+                #print("emergency_active:", ego_vehicle.emergency_active)
             else:
                 acceleration_list.append(a)
 
-        if emergency_active:
-            if self.emergency_step_counter == 0:
+        # Emergency Controller: compute emergency profile based on a
+        if ego_vehicle.emergency_active:
+            if ego_vehicle.emergency_step_counter == 0:
                 self.create_activated_emergency_profile(ego_vehicle.states_lon[time_step].a)
-                a = self.activated_emergency_acc_profile[self.emergency_step_counter]
-                self.emergency_step_counter += 1
+                #print("a = self.activated_emergency_acc_profile:", self.activated_emergency_acc_profile)
+                a = self.activated_emergency_acc_profile[ego_vehicle.emergency_step_counter]
+                ego_vehicle.emergency_step_counter += 1
             else:
-                a = self.activated_emergency_acc_profile[self.emergency_step_counter]
-                self.emergency_step_counter += 1
+                a = self.activated_emergency_acc_profile[ego_vehicle.emergency_step_counter]
+                #emergency_step_counter += 1
+                ego_vehicle.emergency_step_counter += 1
             acceleration_list.append(a)
         else:
-            self.emergency_step_counter = 0
+            #self.emergency_step_counter = 0
+            ego_vehicle.emergency_step_counter = 0
         return acceleration_list

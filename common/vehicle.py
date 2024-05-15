@@ -101,6 +101,14 @@ class Vehicle:
         self._obstacle_type = obstacle_type
         self._maneuver_list = {}
         self._lanelet_assignment = {cr_state.time_step: lanelet_assignment}
+        # ADDED
+        self.ego_lanelet_id = None
+        self.ego_as_obstacle = None
+        self.ego_lane = None
+        self.left_lane = None
+        self.right_lane = None
+        self.emergency_step_counter = 0
+        self.emergency_active = False
 
     @property
     def shape(self) -> Rectangle:
